@@ -127,7 +127,7 @@ let s:files = []
 let s:filtered_files = []
 let s:search_query = ''
 let s:popup_winid = 0
-let s:view_mode = 'recent'  " 'current', 'recent', or 'process'
+let s:view_mode = 'recent'  " 'ls', 'recent', or 'process'
 let s:debug = 1  " Set to 1 to enable debug messages
 let s:max_height = 20  " Maximum height of the popup window
 let s:max_files = 1000  " Maximum number of files to list
@@ -136,9 +136,9 @@ let s:search_mode = 0  " 0: normal mode, 1: search mode
 let s:last_cursor_pos = 1  " New variable to store the last cursor position
 
 let s:pages_data = {
-    \ 'current': {'title': 'Current Directory','search_query': '','get_files': function('PopulateFileList')},
-    \ 'recent':  {'title': 'Recent Files',     'search_query': '','get_files': function('GetRecentFiles')},
-    \ 'process': {'title': 'Vim Processes',    'search_query': '','get_files': function('GetProcesses')}
+    \ 'ls': {'title': 'Current Directory',     'search_query': '', 'selected_line': 1,  'get_files': function('PopulateFileList')},
+    \ 'recent':  {'title': 'Recent Files',     'search_query': '', 'selected_line': 1,  'get_files': function('GetRecentFiles')},
+    \ 'process': {'title': 'Vim Processes',    'search_query': '', 'selected_line': 1,  'get_files': function('GetProcesses')}
     \}
 
 " All these functions are global functions. to make local, do `function s:DebugMsg(msg)`
@@ -227,8 +227,8 @@ function! UpdatePopup()
   let l:row = ((&lines - l:height) / 2) + 1
   let l:col = ((&columns - l:width) / 2) + 1
   
-  let l:title = s:view_mode == 'current' ? 'Current Directory' : (s:view_mode == 'recent' ? 'Recent Files' : 'Process List')
-  let l:title .= ' (j/k:navigate, e:edit, v:vsplit, /:search, t/p:toggle view, q:quit)'
+  let l:title = s:view_mode == 'ls' ? 'Current Directory' : (s:view_mode == 'recent' ? 'Recent Files' : 'Process List')
+  let l:title .= ' (j/k:navigate, e:edit, v:vsplit, /:search, l/r/p:switch view, q:quit)'
   if s:view_mode == 'process'
     let l:title .= ', d:destroy process'
   endif
@@ -277,14 +277,22 @@ function! UpdatePopup()
     call win_execute(s:popup_winid, 'call cursor(1, ' . (9 + len(s:search_query)) . ')')
   elseif !empty(s:filtered_files)
     " Use the last known cursor position, but ensure it's within bounds
+
+    let l:selected_line = s:pages_data[s:view_mode].selected_line
+    if l:selected_line > 0 && l:selected_line <= len(s:filtered_files) "|| a:mode == s:view_mode
+      let s:last_cursor_pos = l:selected_line  " Remember the cursor position
+    endif
+
+    " let s:last_cursor_pos = s:pages_data[s:view_mode].selected_line
     let l:cursor_pos = min([s:last_cursor_pos, len(s:filtered_files)])
     call win_execute(s:popup_winid, 'call cursor(' . l:cursor_pos . ', 1)')
   endif
-
+ 
   " call DebugMsg("UpdatePopup: view_mode=" . s:view_mode . ", filtered_files_count=" . len(s:filtered_files) . ", cursor_line=" . line('.', s:popup_winid))
 endfunction
 
 function! PopupFilter(winid, key)
+  call DebugMsg("PopupFilter: winid=" . a:winid)
   call DebugMsg("PopupFilter: key=" . a:key . ", search_mode=" . s:search_mode)
 
   let l:line = line('.', a:winid) " . means current line number
@@ -301,6 +309,9 @@ function! PopupFilter(winid, key)
       let s:search_query = s:search_query[:-2]
     elseif a:key =~ '^[A-Za-z0-9]$'
       let s:search_query .= a:key
+    elseif a:key == "\<C-j>"
+      call win_execute(a:winid, 'normal! j')
+      let s:search_mode = 0
     elseif a:key == "\<Esc>"
       let s:search_mode = 0
       let s:search_query = ''
@@ -310,16 +321,16 @@ function! PopupFilter(winid, key)
   else
     if s:view_mode == 'process' && a:key == 'd'
         call P_DestroySelectedProcess(a:winid)
-    elseif a:key == 'j'
+    elseif a:key == 'j' || a:key == "\<C-j>"
       if l:line < l:lastline
         call win_execute(a:winid, 'normal! j')
-        call DebugMsg("Moved down to line " . line('.', a:winid))
+        " call DebugMsg("Moved down to line " . line('.', a:winid))
       endif
       return 1
-    elseif a:key == 'k'
+    elseif a:key == 'k' || a:key == "\<C-k>"
       if l:line > 1
         call win_execute(a:winid, 'normal! k')
-        call DebugMsg("Moved up to line " . line('.', a:winid))
+        " call DebugMsg("Moved up to line " . line('.', a:winid))
       endif
       return 1
     elseif a:key == ':'
@@ -333,8 +344,10 @@ function! PopupFilter(winid, key)
       call s:OpenFileAction(a:winid, 'vsplit')
     elseif a:key == 'e'
       call s:OpenFileAction(a:winid, 'edit')
-    elseif a:key == 't'
-      call ToggleViewMode('toggle')
+    elseif a:key == 'r'
+      call ToggleViewMode('recent')
+    elseif a:key == 'l'
+      call ToggleViewMode('ls')
     elseif a:key == 'p'
       call ToggleViewMode('process')
     elseif a:key == 'q' || a:key == "\<Esc>"
@@ -345,12 +358,12 @@ function! PopupFilter(winid, key)
     elseif a:key == "\<C-d>"
       let l:new_line = min([l:line + 10, l:lastline])
       call win_execute(a:winid, 'normal! ' . l:new_line . 'G')
-      call DebugMsg("Moved down 10 lines (or to last line)" . l:new_line)
+      " call DebugMsg("Moved down 10 lines (or to last line)" . l:new_line)
       return 1
     elseif a:key == "\<C-u>"
       let l:new_line = max([l:line - 10, 1])
       call win_execute(a:winid, 'normal! ' . l:new_line . 'G')
-      call DebugMsg("Moved up 10 lines (or to first line)")
+      " call DebugMsg("Moved up 10 lines (or to first line)")
       return 1
     else
       call DebugMsg("default behavior??")
@@ -371,10 +384,15 @@ function! s:OpenFileAction(winid, action)
   call DebugMsg("OpenFileAction: winid=" . a:winid . ", cursor_line=" . line('.', a:winid))
   call DebugMsg("filtered_files count: " . len(s:filtered_files))
 
-  let l:selected_line = line('.', a:winid)
+  " . the line number of the current line we are on
+  if has_key(s:pages_data, s:view_mode)
+     let s:pages_data[s:view_mode].selected_line = line('.', a:winid)
+  endif
+  let l:selected_line = s:pages_data[s:view_mode].selected_line
+  call DebugMsg("Open file: Selected line is  " . l:selected_line)
   
   if s:search_mode
-    let l:selected_line -= 1  " Adjust for search line
+    let l:selected_line -= 1  " Adjust for selected line line to first line 
   endif
   
   if l:selected_line > 0 && l:selected_line <= len(s:filtered_files)
@@ -390,10 +408,19 @@ endfunction
 
 function! FuzzySearch()
   if empty(s:search_query)
-    let s:filtered_files = s:view_mode == 'current' ? copy(s:files) : (s:view_mode == 'recent' ? GetRecentFiles() : GetProcesses('""'))
+    let s:filtered_files = 
+      s:view_mode == 'ls' ? copy(s:files) : 
+      s:view_mode == 'recent' ? GetRecentFiles() :
+     "s:view_mode == 'process' ? 
+       GetProcesses('""') 
   else
     let l:query_parts = split(tolower(s:search_query), '\zs')
-    let l:source = s:view_mode == 'current' ? s:files : (s:view_mode == 'recent' ? GetRecentFiles() : GetProcesses(s:search_query))
+    let l:source = 
+      s:view_mode == 'ls' ? s:files : 
+      s:view_mode == 'recent' ? GetRecentFiles() :
+     "s:view_mode == 'process' ?
+       GetProcesses(s:search_query)
+
     let s:filtered_files = filter(copy(l:source), 'FuzzyMatch(tolower(v:val), l:query_parts) != -1')
   endif
   call DebugMsg("FuzzySearch: query=" . s:search_query . ", filtered_count=" . len(s:filtered_files))
@@ -428,20 +455,21 @@ function! GetProcesses(grepBy)
 endfunction
 
 function! ToggleViewMode(mode)
-  if a:mode == 'toggle'
-    let s:view_mode = s:view_mode == 'current' ? 'recent' : 'current'
-  elseif a:mode == 'process'
-    let s:view_mode = 'process'
+  if has_key(s:pages_data, s:view_mode)
+     " . the line number of the current line we are on
+     " save the current line of the page we are leaving from"
+     let s:pages_data[s:view_mode].selected_line = line('.', s:popup_winid)
   endif
-  
-  if s:view_mode == 'current'
+
+  let s:view_mode = a:mode
+  if s:view_mode == 'ls'
     let s:filtered_files = copy(s:files)
   elseif s:view_mode == 'recent'
     let s:filtered_files = GetRecentFiles()
   elseif s:view_mode == 'process'
     let s:filtered_files = GetProcesses('""')
   endif
-  
+
   let s:search_query = ''
   " turn everything to use this pages_data for better control/functionality for each page created
   if has_key(s:pages_data, s:view_mode)
