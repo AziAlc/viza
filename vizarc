@@ -138,6 +138,7 @@ let s:last_cursor_pos = 1  " New variable to store the last cursor position
 let s:pages_data = {
     \ 'ls': {'title': 'Current Directory',     'search_query': '', 'selected_line': 1,  'get_files': function('PopulateFileList')},
     \ 'recent':  {'title': 'Recent Files',     'search_query': '', 'selected_line': 1,  'get_files': function('GetRecentFiles')},
+    \ 'marks':   {'title': 'Recent Files',     'search_query': '', 'selected_line': 1,  'get_files': function('GetMarksList')},
     \ 'process': {'title': 'Vim Processes',    'search_query': '', 'selected_line': 1,  'get_files': function('GetProcesses')}
     \}
 
@@ -321,6 +322,8 @@ function! PopupFilter(winid, key)
   else
     if s:view_mode == 'process' && a:key == 'd'
         call P_DestroySelectedProcess(a:winid)
+    elseif s:view_mode == 'marks' && a:key == 'e'
+        call M_EditFileMarkSelection(a:winid)
     elseif a:key == 'j' || a:key == "\<C-j>"
       if l:line < l:lastline
         call win_execute(a:winid, 'normal! j')
@@ -348,6 +351,8 @@ function! PopupFilter(winid, key)
       call ToggleViewMode('recent')
     elseif a:key == 'l'
       call ToggleViewMode('ls')
+    elseif a:key == 'm'
+      call ToggleViewMode('marks')
     elseif a:key == 'p'
       call ToggleViewMode('process')
     elseif a:key == 'q' || a:key == "\<Esc>"
@@ -391,6 +396,10 @@ function! s:OpenFileAction(winid, action)
   let l:selected_line = s:pages_data[s:view_mode].selected_line
   call DebugMsg("Open file: Selected line is  " . l:selected_line)
   
+" TODO: after searching, make search go to first entry everytime
+" TODO also, when we press escape. the search clear takes a second to happen and the
+" list doens't refresh until i hit search again (which is an empty search string which is good)
+" Search bar should show somewhere if its not empty
   if s:search_mode
     let l:selected_line -= 1  " Adjust for selected line line to first line 
   endif
@@ -407,19 +416,22 @@ function! s:OpenFileAction(winid, action)
 endfunction
 
 function! FuzzySearch()
+" TODO clean up this logic. can combine if/else 
   if empty(s:search_query)
     let s:filtered_files = 
-      s:view_mode == 'ls' ? copy(s:files) : 
-      s:view_mode == 'recent' ? GetRecentFiles() :
+      \s:view_mode == 'ls' ? copy(s:files) : 
+      \s:view_mode == 'recent' ? GetRecentFiles() :
+      \s:view_mode == 'marks' ? GetMarksList() :
+      \GetProcesses('""') 
      "s:view_mode == 'process' ? 
-       GetProcesses('""') 
   else
     let l:query_parts = split(tolower(s:search_query), '\zs')
     let l:source = 
-      s:view_mode == 'ls' ? s:files : 
-      s:view_mode == 'recent' ? GetRecentFiles() :
+      \s:view_mode == 'ls' ? s:files : 
+      \s:view_mode == 'recent' ? GetRecentFiles() :
+      \s:view_mode == 'marks' ? GetMarksList() :
+      \GetProcesses(s:search_query)  "process is not using fuzzy search. instead using grep -i
      "s:view_mode == 'process' ?
-       GetProcesses(s:search_query)
 
     let s:filtered_files = filter(copy(l:source), 'FuzzyMatch(tolower(v:val), l:query_parts) != -1')
   endif
@@ -438,10 +450,17 @@ function! FuzzyMatch(str, query_parts)
   return l:idx
 endfunction
 
+function! GetMarksList()
+  return split(execute('marks'), "\n")
+endfunction
+
 function! GetRecentFiles()
   let l:recent_files = []
   for l:file in v:oldfiles
+    " The function filters out files that are not readable,
+    " which is useful if some files have been moved or deleted since they were last opened.
     if filereadable(expand(l:file))
+      " fnamemodify() with the ':p' flag, ensures that all file paths are returned as absolute paths.
       call add(l:recent_files, fnamemodify(l:file, ':p'))
     endif
   endfor
@@ -466,6 +485,8 @@ function! ToggleViewMode(mode)
     let s:filtered_files = copy(s:files)
   elseif s:view_mode == 'recent'
     let s:filtered_files = GetRecentFiles()
+  elseif s:view_mode == 'marks'
+    let s:filtered_files = GetMarksList()
   elseif s:view_mode == 'process'
     let s:filtered_files = GetProcesses('""')
   endif
@@ -481,6 +502,11 @@ function! ToggleViewMode(mode)
   call UpdatePopup()
 endfunction
 
+function! M_EditFileMarkSelection(winid)
+  "TODO should open the file list from the marks list. 3rd column i think
+  " need to edit this to not assume the whole line is a file name. not sure for marks.
+  " call s:OpenFileAction(a:winid, 'edit')
+endfunction
 
 " naming convention for actions specific to a page
 function! P_DestroySelectedProcess(winid)

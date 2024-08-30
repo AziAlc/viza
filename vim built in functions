@@ -1,0 +1,62 @@
+  
+" String Manipulation
+echo strlen("hello")           " 5
+echo tolower("HELLO")          " "hello"
+echo toupper("hello")          " "HELLO"
+echo split("a,b,c", ",")       " ['a', 'b', 'c']
+echo join(['a', 'b', 'c'], ',') " "a,b,c"
+echo substitute("hello", "l", "L", "g")  " "heLLo"
+
+" List and Dictionary Operations
+echo len([1, 2, 3])            " 3
+echo sort([3, 1, 2])           " [1, 2, 3]
+echo reverse([1, 2, 3])        " [3, 2, 1]
+echo max([1, 5, 3])            " 5
+echo min([1, 5, 3])            " 1
+echo has_key({'a': 1}, 'a')    " 1 (true)
+
+" File and Buffer Operations
+echo filereadable("file.txt")  " 1 if file exists and is readable
+echo glob("*.txt")             " List of .txt files in current directory
+echo bufname("%")              " Name of the current buffer
+echo getline(1)                " Content of the first line of current buffer
+echo getcwd()                  " Current working directory
+
+" Window and Tab Operations
+echo winnr()                   " Current window number
+echo tabpagenr()               " Current tab page number
+echo winheight(0)              " Height of the current window
+
+" Cursor and Mark Operations
+echo getpos(".")               " Position of cursor [bufnum, lnum, col, off]
+echo line(".")                 " Current line number
+echo col(".")                  " Current column number
+echo getpos("'a")              " Position of mark 'a'
+
+" Text Properties
+echo char2nr("A")              " 65 (ASCII value of 'A')
+echo nr2char(65)               " "A"
+echo strwidth("hello")         " 5 (display width of "hello")
+
+" System Interaction
+echo system("ls")              " Output of 'ls' command
+echo systemlist("ls")          " Output of 'ls' as a list
+echo executable("python")      " 1 if 'python' is executable
+
+" Vim Information
+echo has("python")             " 1 if Vim was compiled with Python support
+echo exists("g:var")           " 1 if global variable 'var' exists
+echo &filetype                 " Current filetype
+
+" Math Operations
+echo abs(-5)                   " 5
+echo float2nr(3.14)            " 3
+echo round(3.7)                " 4.0
+
+" Time and Date
+echo strftime("%Y-%m-%d")      " Current date in YYYY-MM-DD format
+echo localtime()               " Current time as seconds since epoch
+
+" To get help on any function:
+" :help functionname
+" For example: :help strlen

@@ -1,0 +1,106 @@
+" Some common Vim internal variables (v:var)
+
+" File and buffer related
+echo v:fname        " Name of the current file
+echo v:progname     " Name of the program (usually 'vim' or 'gvim')
+echo v:version      " Vim version number
+echo v:oldfiles     " List of recently edited files
+
+" Command and search related
+echo v:count        " Count given for the last Normal mode command
+echo v:count1       " Like v:count, but defaults to 1
+echo v:searchforward " Direction of the last search (1 for forward, 0 for backward)
+echo v:shell_error  " Exit code of the last shell command
+
+" Vim state
+echo v:this_session " Full path of the current session file
+echo v:windowid     " Window ID for the current Vim window (GUI only)
+
+" Script and function related
+echo v:fcs_reason   " Reason for FileChangedShell event
+echo v:fcs_choice   " User's choice for handling a changed file
+
+" Error handling
+echo v:errmsg       " Last error message
+echo v:exception    " Last exception message in a :try block
+echo v:throwpoint   " Where the last exception was thrown
+
+" System information
+echo v:os_name      " Name of the operating system
+echo v:vim_did_enter " Whether Vim has finished starting up
+
+" Types and constants
+echo v:true         " Boolean true value
+echo v:false        " Boolean false value
+echo v:null         " Null value
+echo v:none         " Used to indicate missing optional arguments
+
+" To see all v: variables:
+" :let v:
+
+" To get help on a specific v: variable:
+" :help v:fname
+" :help v:version
+" etc.
+
+
+
+
+
+
+" Marks
+echo getpos("'a")       " Get position of mark 'a'
+echo getpos("'.")       " Get position of last change
+echo getpos("'<")       " Get start of last visual selection
+echo getpos("'>")       " Get end of last visual selection
+echo getpos("''")       " Get position before last jump
+
+" Registers
+echo @a                 " Content of register 'a'
+echo @"                 " Content of the unnamed register (last yank or delete)
+echo @+                 " Content of the system clipboard
+echo @_                 " The black hole register (dev/null)
+echo @/                 " Last search pattern
+
+" Buffer-local variables
+echo b:changedtick      " Number of changes made to the current buffer
+
+" Window-local variables
+echo w:quickfix_title   " Title of the quickfix window
+
+" Tab-local variables
+echo t:tabpagenr        " Current tab page number
+
+" Global variables
+echo g:colors_name      " Name of the current color scheme
+
+" Script-local variables (only accessible within a script)
+" let s:my_var = "example"
+
+" Function-local variables (only accessible within a function)
+" function! MyFunction()
+"   let l:my_var = "example"
+" endfunction
+
+" Environment variables
+echo $HOME              " User's home directory
+echo $VIM               " Directory containing Vim files
+
+" Option values
+echo &tabstop           " Value of 'tabstop' option
+echo &filetype          " Current filetype
+
+" To list all marks:
+" :marks
+
+" To list all registers:
+" :registers
+
+" To list all environment variables:
+" :echo environ()
+
+" To list all options:
+" :set all
+
+
+
