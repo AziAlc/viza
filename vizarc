@@ -124,7 +124,7 @@ set statusline+=\ [%b][0x%B]\               " ASCII and byte code under cursor
 " There are also actual local scoped variables. which is diff 'l;'
 " source path/to/your/script.vim
 let s:files = []
-let s:filtered_files = []
+let s:curr_view_data = []
 let s:search_query = ''
 let s:popup_winid = 0
 let s:view_mode = 'recent'  " 'ls', 'recent', or 'process'
@@ -136,11 +136,15 @@ let s:search_mode = 0  " 0: normal mode, 1: search mode
 let s:last_cursor_pos = 1  " New variable to store the last cursor position
 
 let s:pages_data = {
-    \ 'ls': {'title': 'Current Directory',     'search_query': '', 'selected_line': 1,  'get_files': function('PopulateFileList')},
-    \ 'recent':  {'title': 'Recent Files',     'search_query': '', 'selected_line': 1,  'get_files': function('GetRecentFiles')},
-    \ 'marks':   {'title': 'Recent Files',     'search_query': '', 'selected_line': 1,  'get_files': function('GetMarksList')},
-    \ 'process': {'title': 'Vim Processes',    'search_query': '', 'selected_line': 1,  'get_files': function('GetProcesses')}
-    \}
+    \ 'ls':      {'title': 'Current Directory', 'search_query': '', 'selected_line': 1},
+    \ 'recent':  {'title': 'Recent Files',      'search_query': '', 'selected_line': 1},
+    \ 'marks':   {'title': 'Marks',             'search_query': '', 'selected_line': 1},
+    \ 'process': {'title': 'Vim Processes',     'search_query': '', 'selected_line': 1}
+    \ }
+" 'get_files': function('GetCurrDirFiles')
+" 'get_files': function('GetRecentFiles'  )
+" 'get_files': function('GetMarksList'    )
+" 'get_files': function('GetProcesses'    )
 
 " All these functions are global functions. to make local, do `function s:DebugMsg(msg)`
 " the '!' means override. if there are functions with same name (from same or source file), it won't conflict.
@@ -156,48 +160,19 @@ function! DebugMsg(msg)
   endif
 endfunction
 
-function! CreateFileListPopup()
-  silent! if empty(s:files)
-    call PopulateFileList()
-  endif
-  " this copy does a shallow copy. 
+function! InitPopup()
+  " copy does a shallow copy. 
   " changes to dict and list of list will effect both lists. But not simple primitive types like strings or int
   " this is because primitive types are immutable so they are essentially deep copied
   " a list of primitive types affects only one of the lists.
   " but a list of list will change both list.
-  let s:filtered_files = GetRecentFiles()
+  let s:curr_view_data = GetRecentFiles()
   let s:search_query = ''
   let s:view_mode = 'recent'
   let s:search_mode = 0
   
   call UpdatePopup()
   redraw!
-endfunction
-
-function! PopulateFileList()
-  let s:files = []
-  let l:count = 0
-  " search curr dir, for all files, 0 dir level recursion, and return the result as a List instead of a String
-  let l:glob_result = globpath('.', '*', 0, 1)
-  
-  " Ensure l:glob_result is a list because of vim compatability reason. glob could return a string even if called with arg 1.
-  if type(l:glob_result) == v:t_string
-    let l:glob_result = split(l:glob_result, "\n")
-  endif
-  
-  for l:file in l:glob_result
-    if l:count >= s:max_files
-      break
-    endif
-    " not using 'call' for IgnoredFIle because it returns a value. so this is a direct func call
-    " call is used when there's no ret value or has side effects such as the DebugMsg or internal vim built in func such as 'add'
-    if !IgnoreFile(l:file)
-    "fnamemodify(l:file, ':.') extracts just the base name of the file from l:file.
-      call add(s:files, fnamemodify(l:file, ':.'))
-      let l:count += 1
-    endif
-  endfor
-  call DebugMsg("PopulateFileList: Found " . l:count . " files")
 endfunction
 
 function! IgnoreFile(file)
@@ -212,8 +187,9 @@ function! IgnoreFile(file)
 endfunction
 
 function! UpdatePopup()
-  let l:lines = copy(s:filtered_files)
-  if s:search_mode
+  let l:lines = copy(s:curr_view_data)
+  " show Search as the first line.
+  if s:search_mode || len(s:search_query)
     call insert(l:lines, 'Search: ' . s:search_query . '_', 0)
   endif
 
@@ -276,20 +252,20 @@ function! UpdatePopup()
   " 'call cursor(1, ' . (9 + len(s:search_query)) . ')'sets the cursor position.
   " 9 is a fixed offset padding cuz of UI elements. maybe I dn't need this. 
     call win_execute(s:popup_winid, 'call cursor(1, ' . (9 + len(s:search_query)) . ')')
-  elseif !empty(s:filtered_files)
+  elseif !empty(s:curr_view_data)
     " Use the last known cursor position, but ensure it's within bounds
 
     let l:selected_line = s:pages_data[s:view_mode].selected_line
-    if l:selected_line > 0 && l:selected_line <= len(s:filtered_files) "|| a:mode == s:view_mode
+    if l:selected_line > 0 && l:selected_line <= len(s:curr_view_data) "|| a:mode == s:view_mode
       let s:last_cursor_pos = l:selected_line  " Remember the cursor position
     endif
 
     " let s:last_cursor_pos = s:pages_data[s:view_mode].selected_line
-    let l:cursor_pos = min([s:last_cursor_pos, len(s:filtered_files)])
+    let l:cursor_pos = min([s:last_cursor_pos, len(s:curr_view_data)])
     call win_execute(s:popup_winid, 'call cursor(' . l:cursor_pos . ', 1)')
   endif
  
-  " call DebugMsg("UpdatePopup: view_mode=" . s:view_mode . ", filtered_files_count=" . len(s:filtered_files) . ", cursor_line=" . line('.', s:popup_winid))
+  " call DebugMsg("UpdatePopup: view_mode=" . s:view_mode . ", curr_view_data_count=" . len(s:curr_view_data) . ", cursor_line=" . line('.', s:popup_winid))
 endfunction
 
 function! PopupFilter(winid, key)
@@ -303,22 +279,27 @@ function! PopupFilter(winid, key)
   " If we want to REFRESH/keep the popup, don't return so we kill updatePopup
   " for j/k, we return 1 because we want to keep the same instance of the pop up
   " for kill process, we want it to call update popup at the end of this func because it needs to update view
-  if s:search_mode
-    if a:key == "\<CR>"
+  if s:search_mode 
+    if a:key == "\<CR>" || a:key == "\<C-j>"
+    " if nothing is typed, move to first line. otherwise second line because search line is visible
+      let s:pages_data[s:view_mode].selected_line = len(s:search_query) ? 2 : 1
       let s:search_mode = 0
     elseif a:key == "\<BS>"
       let s:search_query = s:search_query[:-2]
     elseif a:key =~ '^[A-Za-z0-9]$'
       let s:search_query .= a:key
-    elseif a:key == "\<C-j>"
-      call win_execute(a:winid, 'normal! j')
-      let s:search_mode = 0
     elseif a:key == "\<Esc>"
+      " set to 1 here because the search line disappears
+      let s:pages_data[s:view_mode].selected_line = 1
       let s:search_mode = 0
       let s:search_query = ''
+      " call fuzz search with empty string so we can update the list 
+      call FuzzySearch()
     else
       return 0
     endif
+
+    call FuzzySearch()
   else
     if s:view_mode == 'process' && a:key == 'd'
         call P_DestroySelectedProcess(a:winid)
@@ -337,9 +318,11 @@ function! PopupFilter(winid, key)
       endif
       return 1
     elseif a:key == ':'
-      " make this a noop
+      " make this a noop. maybe later can use to switch pages? this is vim's command pallete key
       call DebugMsg(": is disabled while window is up")
       return 1
+      " condisder making this ctrl /
+      " so the default can still be used.
     elseif a:key == '/'
       let s:search_mode = 1
       let s:search_query = s:search_query
@@ -371,15 +354,12 @@ function! PopupFilter(winid, key)
       " call DebugMsg("Moved up 10 lines (or to first line)")
       return 1
     else
-      call DebugMsg("default behavior??")
+      call DebugMsg("Default behavior " . a:key)
       return 0
     endif
   endif
 
-  if s:search_mode
-    call FuzzySearch()
-  endif
-  call DebugMsg("Calling UpdatePopup")
+  call DebugMsg("Calling UpdatePopup after " . a:key)
   call UpdatePopup()
   return 1
 endfunction
@@ -387,7 +367,7 @@ endfunction
 " made this locally scoped because it's a helper function. not to be used outside this script.
 function! s:OpenFileAction(winid, action)
   call DebugMsg("OpenFileAction: winid=" . a:winid . ", cursor_line=" . line('.', a:winid))
-  call DebugMsg("filtered_files count: " . len(s:filtered_files))
+  call DebugMsg("curr_view_data count: " . len(s:curr_view_data))
 
   " . the line number of the current line we are on
   if has_key(s:pages_data, s:view_mode)
@@ -396,17 +376,9 @@ function! s:OpenFileAction(winid, action)
   let l:selected_line = s:pages_data[s:view_mode].selected_line
   call DebugMsg("Open file: Selected line is  " . l:selected_line)
   
-" TODO: after searching, make search go to first entry everytime
-" TODO also, when we press escape. the search clear takes a second to happen and the
-" list doens't refresh until i hit search again (which is an empty search string which is good)
-" Search bar should show somewhere if its not empty
-  if s:search_mode
-    let l:selected_line -= 1  " Adjust for selected line line to first line 
-  endif
-  
-  if l:selected_line > 0 && l:selected_line <= len(s:filtered_files)
+  if l:selected_line > 0 && l:selected_line <= len(s:curr_view_data)
     let s:last_cursor_pos = l:selected_line  " Remember the cursor position
-    let l:filename = s:filtered_files[l:selected_line - 1]
+    let l:filename = s:curr_view_data[l:selected_line - 1]
     call DebugMsg("Opening file: " . l:filename)
     call popup_close(a:winid)
     execute a:action . " " . fnameescape(l:filename)
@@ -416,26 +388,20 @@ function! s:OpenFileAction(winid, action)
 endfunction
 
 function! FuzzySearch()
-" TODO clean up this logic. can combine if/else 
-  if empty(s:search_query)
-    let s:filtered_files = 
-      \s:view_mode == 'ls' ? copy(s:files) : 
-      \s:view_mode == 'recent' ? GetRecentFiles() :
-      \s:view_mode == 'marks' ? GetMarksList() :
-      \GetProcesses('""') 
-     "s:view_mode == 'process' ? 
-  else
-    let l:query_parts = split(tolower(s:search_query), '\zs')
-    let l:source = 
-      \s:view_mode == 'ls' ? s:files : 
-      \s:view_mode == 'recent' ? GetRecentFiles() :
-      \s:view_mode == 'marks' ? GetMarksList() :
-      \GetProcesses(s:search_query)  "process is not using fuzzy search. instead using grep -i
-     "s:view_mode == 'process' ?
+" TODO: Do I want to requery after every press? Seems expensive
+" I could just save the results in pages.data
+" downside is we don't get real time updates while searching"
+  let l:query_parts = split(tolower(s:search_query), '\zs')
+  let l:source = 
+    \s:view_mode == 'ls' ? GetCurrDirFiles() : 
+    \s:view_mode == 'recent' ? GetRecentFiles() :
+    \s:view_mode == 'marks' ? GetMarksList() :
+    \GetProcesses(empty(s:search_query) ? '""' : s:search_query)  
+    "s:view_mode == 'process' ?
+    "process is not using fuzzy search. instead using grep -i
 
-    let s:filtered_files = filter(copy(l:source), 'FuzzyMatch(tolower(v:val), l:query_parts) != -1')
-  endif
-  call DebugMsg("FuzzySearch: query=" . s:search_query . ", filtered_count=" . len(s:filtered_files))
+  let s:curr_view_data = filter(copy(l:source), 'FuzzyMatch(tolower(v:val), l:query_parts) != -1')
+  call DebugMsg("FuzzySearch: query=" . s:search_query . ", filtered_count=" . len(s:curr_view_data))
 endfunction
 
 function! FuzzyMatch(str, query_parts)
@@ -448,6 +414,33 @@ function! FuzzyMatch(str, query_parts)
     let l:idx = l:newidx + 1
   endfor
   return l:idx
+endfunction
+
+function! GetCurrDirFiles()
+  let s:files = []
+  let l:count = 0
+  " search curr dir '*'', ('**' means recurse to subdirs) for all files, 1 = include hidden files, and return the result as a List instead of a String
+  let l:glob_result = globpath('.', '*', 1, 1)
+  
+  " Ensure l:glob_result is a list because of vim compatability reason. glob could return a string even if called with arg 1.
+  if type(l:glob_result) == v:t_string
+    let l:glob_result = split(l:glob_result, "\n")
+  endif
+  
+  for l:file in l:glob_result
+    if l:count >= s:max_files
+      break
+    endif
+    " not using 'call' for IgnoredFIle because it returns a value. so this is a direct func call
+    " call is used when there's no ret value or has side effects such as the DebugMsg or internal vim built in func such as 'add'
+    if !IgnoreFile(l:file)
+    "fnamemodify(l:file, ':.') extracts just the base name of the file from l:file.
+      call add(s:files, fnamemodify(l:file, ':.'))
+      let l:count += 1
+    endif
+  endfor
+  call DebugMsg("GetCurrDirFiles: Found " . l:count . " files.")
+  return s:files
 endfunction
 
 function! GetMarksList()
@@ -482,13 +475,13 @@ function! ToggleViewMode(mode)
 
   let s:view_mode = a:mode
   if s:view_mode == 'ls'
-    let s:filtered_files = copy(s:files)
+    let s:curr_view_data = GetCurrDirFiles()
   elseif s:view_mode == 'recent'
-    let s:filtered_files = GetRecentFiles()
+    let s:curr_view_data = GetRecentFiles()
   elseif s:view_mode == 'marks'
-    let s:filtered_files = GetMarksList()
+    let s:curr_view_data = GetMarksList()
   elseif s:view_mode == 'process'
-    let s:filtered_files = GetProcesses('""')
+    let s:curr_view_data = GetProcesses('""')
   endif
 
   let s:search_query = ''
@@ -498,7 +491,7 @@ function! ToggleViewMode(mode)
   endif
 
   let s:search_mode = 0
-  call DebugMsg("ToggleViewMode: New view_mode=" . s:view_mode . ", filtered_files_count=" . len(s:filtered_files))
+  call DebugMsg("ToggleViewMode: New view_mode=" . s:view_mode . ", curr_view_data_count=" . len(s:curr_view_data))
   call UpdatePopup()
 endfunction
 
@@ -511,8 +504,8 @@ endfunction
 " naming convention for actions specific to a page
 function! P_DestroySelectedProcess(winid)
   let l:line = line('.', a:winid)
-  if l:line > 0 && l:line <= len(s:filtered_files)
-    let l:process_info = s:filtered_files[l:line - 1]
+  if l:line > 0 && l:line <= len(s:curr_view_data)
+    let l:process_info = s:curr_view_data[l:line - 1]
     let l:pid = split(l:process_info)[1]  " Assuming PID is the second field in ps output
     call DebugMsg("Attempting to kill process with PID: " . l:pid)
     let l:kill_output = system('kill -9 ' . l:pid)
@@ -520,7 +513,7 @@ function! P_DestroySelectedProcess(winid)
       call DebugMsg("Failed to kill process: " . l:kill_output)
     else
       call DebugMsg("Process killed successfully")
-      let s:filtered_files = GetProcesses('"'.s:search_query.'"')
+      let s:curr_view_data = GetProcesses('"'.s:search_query.'"')
       " call ToggleViewMode('process')  " Refresh the process list
     endif
   else
@@ -538,7 +531,7 @@ endfunction
 
 
 " Command to create the popup
-command! -bar FileList call CreateFileListPopup()
+command! -bar FileList call InitPopup()
 
 " Key mapping to open the file list popup
 nnoremap <silent> <C-p> :FileList<CR>
