@@ -1,3 +1,5 @@
+" To source different vimrc:
+"export VIMINIT="source /Users/iza/Desktop/viza/vizarc.vim"
 
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " => Text, tab and indent related
@@ -26,26 +28,12 @@ set wrap "Wrap lines
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " => Files, backups and undo
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
-" Turn backup off, since most stuff is in SVN, git etc. anyway...
+" Turn backup off
 set nobackup
 set nowb
 set noswapfile
 
 
-"#####
-"syntax match mdLink /\[.\{-}\](.\{-})/ conceal cchar=link
-"syntax match lineStart /\<\a/ conceal cchar=>
-"set statusline=%f
-"set statusline=%#StatusLineNC#\ %<%f\ %h%m%r%=%-14.(%l,%c%V%)\ %P
-"set conceallevel=1
-"syntax on
-
-
-
-
-
-
-          
 " some funky status bar code its seems
 " https://stackoverflow.com/questions/9065941/how-can-i-change-vim-status-line-colour
 set laststatus=2            " set the bottom status bar
@@ -68,7 +56,6 @@ set statusline+=[%{strlen(&fenc)?&fenc:'none'}, "file encoding
 set statusline+=%{&ff}] "file format
 set statusline+=%y      "filetype
 set statusline+=%h      "help file flag test
-set statusline+=TESTING      "help file flag test
 set statusline+=[%{getbufvar(bufnr('%'),'&mod')?'modified':'saved'}]      
 "modified flag
 
@@ -80,12 +67,6 @@ set statusline+=\ Col:%c                    " current column
 set statusline+=\ Buf:%n                    " Buffer number
 set statusline+=\ [%b][0x%B]\               " ASCII and byte code under cursor
 
-"nnoremap i <Nop>
-"nnoremap I <Nop>
-"nnoremap a <Nop>
-"nnoremap A <Nop>
-"nnoremap o <Nop>
-"nnoremap O <Nop>
 " enter now executes shell
 "nnoremap O :.!sh<Cr>
 "nnoremap A :.!ls<Cr>
@@ -110,13 +91,7 @@ set statusline+=\ [%b][0x%B]\               " ASCII and byte code under cursor
 " vim 
 "!vim
 
-" File: enhanced_file_list_popup.vim
-" Description: An enhanced Vim plugin for file navigation with in-popup real-time fuzzy search
 
-
-
-" File: enhanced_file_list_popup.vim
-" Description: An enhanced Vim plugin for file navigation with in-popup real-time fuzzy search
 
 " These are script local scoped variables. 
 " Won't conflict is sourced by another file with same names.
@@ -125,26 +100,23 @@ set statusline+=\ [%b][0x%B]\               " ASCII and byte code under cursor
 " source path/to/your/script.vim
 let s:files = []
 let s:curr_view_data = []
-let s:search_query = ''
 let s:popup_winid = 0
-let s:view_mode = 'recent'  " 'ls', 'recent', or 'process'
+let s:view_mode = 'recent'
 let s:debug = 1  " Set to 1 to enable debug messages
 let s:max_height = 20  " Maximum height of the popup window
 let s:max_files = 1000  " Maximum number of files to list
 let s:ignore_patterns = ['.git', 'node_modules', '*.pyc']  " Patterns to ignore
+let s:search_query = ''
+"TODO can remove this var and just use len(s:search_query)
 let s:search_mode = 0  " 0: normal mode, 1: search mode
 let s:last_cursor_pos = 1  " New variable to store the last cursor position
 
 let s:pages_data = {
-    \ 'ls':      {'title': 'Current Directory', 'search_query': '', 'selected_line': 1},
-    \ 'recent':  {'title': 'Recent Files',      'search_query': '', 'selected_line': 1},
-    \ 'marks':   {'title': 'Marks',             'search_query': '', 'selected_line': 1},
-    \ 'process': {'title': 'Vim Processes',     'search_query': '', 'selected_line': 1}
+    \ 'ls':      {'title': 'Current Directory', 'search_query': '', 'selected_line': 1, 'get_data': "GetCurrDirFiles"},
+    \ 'recent':  {'title': 'Recent Files',      'search_query': '', 'selected_line': 1, 'get_data': "GetRecentFiles"},
+    \ 'marks':   {'title': 'Marks',             'search_query': '', 'selected_line': 1, 'get_data': "GetMarksList"},
+    \ 'process': {'title': 'Vim Processes',     'search_query': '', 'selected_line': 1, 'get_data': "GetProcesses"}
     \ }
-" 'get_files': function('GetCurrDirFiles')
-" 'get_files': function('GetRecentFiles'  )
-" 'get_files': function('GetMarksList'    )
-" 'get_files': function('GetProcesses'    )
 
 " All these functions are global functions. to make local, do `function s:DebugMsg(msg)`
 " the '!' means override. if there are functions with same name (from same or source file), it won't conflict.
@@ -167,9 +139,7 @@ function! InitPopup()
   " a list of primitive types affects only one of the lists.
   " but a list of list will change both list.
   let s:curr_view_data = GetRecentFiles()
-  let s:search_query = ''
   let s:view_mode = 'recent'
-  let s:search_mode = 0
   
   call UpdatePopup()
   redraw!
@@ -188,9 +158,11 @@ endfunction
 
 function! UpdatePopup()
   let l:lines = copy(s:curr_view_data)
-  " show Search as the first line.
-  if s:search_mode || len(s:search_query)
+  " show Search as the first line. Remove '_' if not in search mode
+  if s:search_mode
     call insert(l:lines, 'Search: ' . s:search_query . '_', 0)
+  elseif len(s:search_query)
+    call insert(l:lines, 'Search: ' . s:search_query, 0)
   endif
 
   " Calculate the width of the popup
@@ -254,13 +226,11 @@ function! UpdatePopup()
     call win_execute(s:popup_winid, 'call cursor(1, ' . (9 + len(s:search_query)) . ')')
   elseif !empty(s:curr_view_data)
     " Use the last known cursor position, but ensure it's within bounds
-
     let l:selected_line = s:pages_data[s:view_mode].selected_line
     if l:selected_line > 0 && l:selected_line <= len(s:curr_view_data) "|| a:mode == s:view_mode
       let s:last_cursor_pos = l:selected_line  " Remember the cursor position
     endif
 
-    " let s:last_cursor_pos = s:pages_data[s:view_mode].selected_line
     let l:cursor_pos = min([s:last_cursor_pos, len(s:curr_view_data)])
     call win_execute(s:popup_winid, 'call cursor(' . l:cursor_pos . ', 1)')
   endif
@@ -286,7 +256,7 @@ function! PopupFilter(winid, key)
       let s:search_mode = 0
     elseif a:key == "\<BS>"
       let s:search_query = s:search_query[:-2]
-    elseif a:key =~ '^[A-Za-z0-9]$'
+    elseif a:key =~ '^[A-Za-z0-9 ]$'
       let s:search_query .= a:key
     elseif a:key == "\<Esc>"
       " set to 1 here because the search line disappears
@@ -339,9 +309,8 @@ function! PopupFilter(winid, key)
     elseif a:key == 'p'
       call ToggleViewMode('process')
     elseif a:key == 'q' || a:key == "\<Esc>"
-      call DebugMsg("Closing popup due to 'q' or <Esc>")
       call popup_close(a:winid)
-      call DebugMsg("popup_close called with winid: " . a:winid)
+      call DebugMsg("Popup closed with winid: " . a:winid)
       return 1
     elseif a:key == "\<C-d>"
       let l:new_line = min([l:line + 10, l:lastline])
@@ -392,14 +361,8 @@ function! FuzzySearch()
 " I could just save the results in pages.data
 " downside is we don't get real time updates while searching"
   let l:query_parts = split(tolower(s:search_query), '\zs')
-  let l:source = 
-    \s:view_mode == 'ls' ? GetCurrDirFiles() : 
-    \s:view_mode == 'recent' ? GetRecentFiles() :
-    \s:view_mode == 'marks' ? GetMarksList() :
-    \GetProcesses(empty(s:search_query) ? '""' : s:search_query)  
-    "s:view_mode == 'process' ?
-    "process is not using fuzzy search. instead using grep -i
 
+  let l:source = call (function(s:pages_data[s:view_mode].get_data), [s:search_query])
   let s:curr_view_data = filter(copy(l:source), 'FuzzyMatch(tolower(v:val), l:query_parts) != -1')
   call DebugMsg("FuzzySearch: query=" . s:search_query . ", filtered_count=" . len(s:curr_view_data))
 endfunction
@@ -416,7 +379,27 @@ function! FuzzyMatch(str, query_parts)
   return l:idx
 endfunction
 
-function! GetCurrDirFiles()
+function! ToggleViewMode(mode)
+  if has_key(s:pages_data, s:view_mode)
+     " . the line number of the current line we are on
+     " save the current line of the page we are leaving from"
+     let s:pages_data[s:view_mode].selected_line = line('.', s:popup_winid)
+  endif
+
+  if s:view_mode != a:mode
+    let s:view_mode = a:mode
+    let s:search_query = ''
+    let s:curr_view_data = call (function(s:pages_data[s:view_mode].get_data), [])
+    " TODO: turn everything to use this pages_data for better control/functionality for each page created
+    let s:pages_data[s:view_mode].search_query = ''
+  endif
+
+  let s:search_mode = 0
+  call DebugMsg("ToggleViewMode: New view_mode=" . s:view_mode . ", curr_view_data_count=" . len(s:curr_view_data))
+  call UpdatePopup()
+endfunction
+
+function! GetCurrDirFiles(filterBy = "")
   let s:files = []
   let l:count = 0
   " search curr dir '*'', ('**' means recurse to subdirs) for all files, 1 = include hidden files, and return the result as a List instead of a String
@@ -443,11 +426,11 @@ function! GetCurrDirFiles()
   return s:files
 endfunction
 
-function! GetMarksList()
+function! GetMarksList(filterBy = "")
   return split(execute('marks'), "\n")
 endfunction
 
-function! GetRecentFiles()
+function! GetRecentFiles(filterBy = "")
   let l:recent_files = []
   for l:file in v:oldfiles
     " The function filters out files that are not readable,
@@ -461,38 +444,9 @@ function! GetRecentFiles()
   return l:recent_files[:49]  " Return up to 50 most recent files
 endfunction
 
-function! GetProcesses(grepBy)
-  let l:output = systemlist('ps -aef | grep -i ' . a:grepBy)
+function! GetProcesses(filterBy = "")
+  let l:output = systemlist('ps -aef' . (a:filterBy != "" ? ' | grep -i ' . shellescape(a:filterBy) : ""))
   return l:output  
-endfunction
-
-function! ToggleViewMode(mode)
-  if has_key(s:pages_data, s:view_mode)
-     " . the line number of the current line we are on
-     " save the current line of the page we are leaving from"
-     let s:pages_data[s:view_mode].selected_line = line('.', s:popup_winid)
-  endif
-
-  let s:view_mode = a:mode
-  if s:view_mode == 'ls'
-    let s:curr_view_data = GetCurrDirFiles()
-  elseif s:view_mode == 'recent'
-    let s:curr_view_data = GetRecentFiles()
-  elseif s:view_mode == 'marks'
-    let s:curr_view_data = GetMarksList()
-  elseif s:view_mode == 'process'
-    let s:curr_view_data = GetProcesses('""')
-  endif
-
-  let s:search_query = ''
-  " turn everything to use this pages_data for better control/functionality for each page created
-  if has_key(s:pages_data, s:view_mode)
-     let s:pages_data[s:view_mode].search_query = ''
-  endif
-
-  let s:search_mode = 0
-  call DebugMsg("ToggleViewMode: New view_mode=" . s:view_mode . ", curr_view_data_count=" . len(s:curr_view_data))
-  call UpdatePopup()
 endfunction
 
 function! M_EditFileMarkSelection(winid)
