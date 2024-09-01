@@ -101,7 +101,7 @@ set statusline+=\ [%b][0x%B]\               " ASCII and byte code under cursor
 let s:files = []
 let s:curr_view_data = []
 let s:popup_winid = 0
-let s:view_mode = 'recent'
+let s:view_mode = ''
 let s:debug = 1  " Set to 1 to enable debug messages
 let s:max_height = 20  " Maximum height of the popup window
 let s:max_files = 1000  " Maximum number of files to list
@@ -112,10 +112,10 @@ let s:search_mode = 0  " 0: normal mode, 1: search mode
 let s:last_cursor_pos = 1  " New variable to store the last cursor position
 
 let s:pages_data = {
-    \ 'ls':      {'title': 'Current Directory', 'search_query': '', 'selected_line': 1, 'get_data': "GetCurrDirFiles"},
-    \ 'recent':  {'title': 'Recent Files',      'search_query': '', 'selected_line': 1, 'get_data': "GetRecentFiles"},
-    \ 'marks':   {'title': 'Marks',             'search_query': '', 'selected_line': 1, 'get_data': "GetMarksList"},
-    \ 'process': {'title': 'Vim Processes',     'search_query': '', 'selected_line': 1, 'get_data': "GetProcesses"}
+    \ 'ls':      {'title': 'Current Directory','starting_line': 1 , 'search_query': '', 'selected_line': 1, 'get_data': "GetCurrDirFiles"},
+    \ 'recent':  {'title': 'Recent Files',     'starting_line': 1 , 'search_query': '', 'selected_line': 1, 'get_data': "GetRecentFiles"},
+    \ 'marks':   {'title': 'Marks',            'starting_line': 2 , 'search_query': '', 'selected_line': 1, 'get_data': "GetMarksList"},
+    \ 'process': {'title': 'Processes',        'starting_line': 2 , 'search_query': '', 'selected_line': 1, 'get_data': "GetProcesses"}
     \ }
 
 " All these functions are global functions. to make local, do `function s:DebugMsg(msg)`
@@ -138,8 +138,11 @@ function! InitPopup()
   " this is because primitive types are immutable so they are essentially deep copied
   " a list of primitive types affects only one of the lists.
   " but a list of list will change both list.
-  let s:curr_view_data = GetRecentFiles()
-  let s:view_mode = 'recent'
+  if empty(s:view_mode)
+    let s:view_mode = 'recent'
+    let s:curr_view_data = GetRecentFiles()
+  endif
+  let s:search_mode = 0
   
   call UpdatePopup()
   redraw!
@@ -176,11 +179,15 @@ function! UpdatePopup()
   let l:row = ((&lines - l:height) / 2) + 1
   let l:col = ((&columns - l:width) / 2) + 1
   
-  let l:title = s:view_mode == 'ls' ? 'Current Directory' : (s:view_mode == 'recent' ? 'Recent Files' : 'Process List')
+  let l:title = s:pages_data[s:view_mode].title
   let l:title .= ' (j/k:navigate, e:edit, v:vsplit, /:search, l/r/p:switch view, q:quit)'
   if s:view_mode == 'process'
     let l:title .= ', d:destroy process'
   endif
+  if s:view_mode == 'marks'
+    let l:title .= ', g: go to mark'
+  endif
+  
   
   let l:options = {
         \ 'line': l:row,
@@ -227,6 +234,9 @@ function! UpdatePopup()
   elseif !empty(s:curr_view_data)
     " Use the last known cursor position, but ensure it's within bounds
     let l:selected_line = s:pages_data[s:view_mode].selected_line
+    if !len(s:search_query)
+      let l:selected_line = max([l:selected_line, s:pages_data[s:view_mode].starting_line])
+    endif
     if l:selected_line > 0 && l:selected_line <= len(s:curr_view_data) "|| a:mode == s:view_mode
       let s:last_cursor_pos = l:selected_line  " Remember the cursor position
     endif
@@ -278,13 +288,15 @@ function! PopupFilter(winid, key)
     elseif a:key == 'j' || a:key == "\<C-j>"
       if l:line < l:lastline
         call win_execute(a:winid, 'normal! j')
-        " call DebugMsg("Moved down to line " . line('.', a:winid))
+        " call DebugMsg("Moved down to line " . line('.', a:winid) . "Line is " . l:line))
       endif
       return 1
     elseif a:key == 'k' || a:key == "\<C-k>"
-      if l:line > 1
+      "TODO: This might need improvement. Or maybe I need better error handling for pages that have
+      "header information such as ps -aef which could mess up actions since those lines have different info.
+      if l:line > (empty(s:search_query) ? 1 : 2)
         call win_execute(a:winid, 'normal! k')
-        " call DebugMsg("Moved up to line " . line('.', a:winid))
+        " call DebugMsg("Moved up to line " . line('.', a:winid) . "Line is " . l:line)
       endif
       return 1
     elseif a:key == ':'
@@ -333,26 +345,38 @@ function! PopupFilter(winid, key)
   return 1
 endfunction
 
-" made this locally scoped because it's a helper function. not to be used outside this script.
-function! s:OpenFileAction(winid, action)
-  call DebugMsg("OpenFileAction: winid=" . a:winid . ", cursor_line=" . line('.', a:winid))
-  call DebugMsg("curr_view_data count: " . len(s:curr_view_data))
-
+function! s:ParseLineData(winid, awkColumn = -1)
   " . the line number of the current line we are on
   if has_key(s:pages_data, s:view_mode)
      let s:pages_data[s:view_mode].selected_line = line('.', a:winid)
   endif
   let l:selected_line = s:pages_data[s:view_mode].selected_line
-  call DebugMsg("Open file: Selected line is  " . l:selected_line)
+  call DebugMsg("Selected line is  " . l:selected_line)
   
+  let l:parsed_line_data = ''
   if l:selected_line > 0 && l:selected_line <= len(s:curr_view_data)
-    let s:last_cursor_pos = l:selected_line  " Remember the cursor position
-    let l:filename = s:curr_view_data[l:selected_line - 1]
+    " Need to account for the extra line added when we have an active search
+    let l:line_content = s:curr_view_data[l:selected_line - 1 + (empty(s:search_query) ? 0 : -1) ]
+    call DebugMsg("Line is  " . l:line_content)
+    let l:parsed_line_data = l:line_content
+    if a:awkColumn >= 0
+      let l:parsed_line_data = split(l:line_content)[a:awkColumn]
+      " let l:parsed_line_data = system('echo ' . shellescape(l:line_content) . ' | awk ''{print $' . a:awkColumn . '}''')
+    endif
+  else
+    call DebugMsg("Error: Invalid selected line " . l:selected_line)
+  endif
+  return l:parsed_line_data
+endfunction
+
+" made this locally scoped because it's a helper function. not to be used outside this script.
+function! s:OpenFileAction(winid, action, awkColumn = '')
+  call DebugMsg("OpenFileAction: winid=" . a:winid . ", cursor_line=" . line('.', a:winid))
+  let l:filename = s:ParseLineData(a:winid, a:awkColumn)
+  if !empty(l:filename)
     call DebugMsg("Opening file: " . l:filename)
     call popup_close(a:winid)
     execute a:action . " " . fnameescape(l:filename)
-  else
-    call DebugMsg("Error: Invalid selected line " . l:selected_line)
   endif
 endfunction
 
@@ -391,6 +415,8 @@ function! ToggleViewMode(mode)
     let s:search_query = ''
     let s:curr_view_data = call (function(s:pages_data[s:view_mode].get_data), [])
     " TODO: turn everything to use this pages_data for better control/functionality for each page created
+    " TODO: make search persist after switching views? IF not, the cursor pos should go back to first after we
+    " switch while in search mode. i.e. if in search, then switch page and back again, we want to start from top instead of last pos during the search
     let s:pages_data[s:view_mode].search_query = ''
   endif
 
@@ -445,37 +471,32 @@ function! GetRecentFiles(filterBy = "")
 endfunction
 
 function! GetProcesses(filterBy = "")
-  let l:output = systemlist('ps -aef' . (a:filterBy != "" ? ' | grep -i ' . shellescape(a:filterBy) : ""))
-  return l:output  
+  return systemlist('ps -aef' . (a:filterBy != "" ? ' | grep -i ' . shellescape(a:filterBy) : ""))
 endfunction
 
 function! M_EditFileMarkSelection(winid)
-  "TODO should open the file list from the marks list. 3rd column i think
-  " need to edit this to not assume the whole line is a file name. not sure for marks.
-  " call s:OpenFileAction(a:winid, 'edit')
+  call DebugMsg("M_EditFileMarkSelection: winid=" . a:winid . ", cursor_line=" . line('.', a:winid))
+  let l:mark_letter = s:ParseLineData(a:winid, 0)
+  if !empty(l:mark_letter)
+    call DebugMsg("Opening mark: " . l:mark_letter)
+    call popup_close(a:winid)
+    execute(''''.l:mark_letter.'')
+    let s:curr_view_data = GetMarksList()
+  endif
 endfunction
 
-" naming convention for actions specific to a page
 function! P_DestroySelectedProcess(winid)
-  let l:line = line('.', a:winid)
-  if l:line > 0 && l:line <= len(s:curr_view_data)
-    let l:process_info = s:curr_view_data[l:line - 1]
-    let l:pid = split(l:process_info)[1]  " Assuming PID is the second field in ps output
-    call DebugMsg("Attempting to kill process with PID: " . l:pid)
+  let l:pid = s:ParseLineData(a:winid, 1)
+  if !empty(l:pid)
     let l:kill_output = system('kill -9 ' . l:pid)
     if v:shell_error
-      call DebugMsg("Failed to kill process: " . l:kill_output)
+      call DebugMsg("Failed to kill process: " . l:pid)
     else
-      call DebugMsg("Process killed successfully")
-      let s:curr_view_data = GetProcesses('"'.s:search_query.'"')
-      " call ToggleViewMode('process')  " Refresh the process list
+      call DebugMsg("Process killed successfully " . l:pid)
+      let s:curr_view_data = GetProcesses(s:search_query)
     endif
-  else
-    call DebugMsg("Error: Invalid selected line " . l:line)
   endif
-    call DebugMsg("the search query is " .s:search_query)
   call UpdatePopup()
-
 endfunction
 
 function! ClosePopup(id, result)
@@ -499,3 +520,4 @@ command! -nargs=1 AddIgnorePattern call add(s:ignore_patterns, <args>)
 command! -nargs=0 ClearIgnorePatterns let s:ignore_patterns = []
 
 
+"TODO : there is a problem when I have :E opened. switching pages doens't work.
