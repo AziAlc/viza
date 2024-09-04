@@ -115,7 +115,8 @@ let s:pages_data = {
     \ 'ls':      {'title': 'Current Directory','keybind': 'l' ,'starting_line': 1 , 'search_query': '', 'selected_line': 1, 'get_data': "GetCurrDirFiles"},
     \ 'recent':  {'title': 'Recent Files',     'keybind': 'r' ,'starting_line': 1 , 'search_query': '', 'selected_line': 1, 'get_data': "GetRecentFiles"},
     \ 'marks':   {'title': 'Marks',            'keybind': 'm' ,'starting_line': 2 , 'search_query': '', 'selected_line': 1, 'get_data': "GetMarksList"},
-    \ 'process': {'title': 'Processes',        'keybind': 'p' ,'starting_line': 2 , 'search_query': '', 'selected_line': 1, 'get_data': "GetProcesses"}
+    \ 'process': {'title': 'Processes',        'keybind': 'p' ,'starting_line': 2 , 'search_query': '', 'selected_line': 1, 'get_data': "GetProcesses"},
+    \ 'config':  {'title': 'Configuration',    'keybind': 'c' ,'starting_line': 1 , 'search_query': '', 'selected_line': 1, 'get_data': "GetConfiguration"},
     \ }
 
 " All these functions are global functions. to make local, do `function s:DebugMsg(msg)`
@@ -480,6 +481,20 @@ endfunction
 
 function! GetProcesses(filterBy = "")
   return systemlist('ps -aef' . (a:filterBy != "" ? ' | grep -i ' . shellescape(a:filterBy) : ""))
+endfunction
+
+function! GetConfiguration(filterBy = "")
+  let l:config_file = '~/.vizarc'
+  " Check if the file exists. Expand is necessary for when using path with "~"
+  if !filereadable(expand(l:config_file))
+    execute "edit " . fnameescape(l:config_file)
+    call setline(1, "Config file for viza.")
+    setlocal nomodified
+  else
+    " Open the file automatically when we go to this page
+    execute "edit " . fnameescape(l:config_file)
+  endif
+  return [l:config_file]
 endfunction
 
 function! M_EditFileMarkSelection(winid)
