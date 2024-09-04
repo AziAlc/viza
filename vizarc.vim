@@ -112,10 +112,10 @@ let s:search_mode = 0  " 0: normal mode, 1: search mode
 let s:last_cursor_pos = 1  " New variable to store the last cursor position
 
 let s:pages_data = {
-    \ 'ls':      {'title': 'Current Directory','starting_line': 1 , 'search_query': '', 'selected_line': 1, 'get_data': "GetCurrDirFiles"},
-    \ 'recent':  {'title': 'Recent Files',     'starting_line': 1 , 'search_query': '', 'selected_line': 1, 'get_data': "GetRecentFiles"},
-    \ 'marks':   {'title': 'Marks',            'starting_line': 2 , 'search_query': '', 'selected_line': 1, 'get_data': "GetMarksList"},
-    \ 'process': {'title': 'Processes',        'starting_line': 2 , 'search_query': '', 'selected_line': 1, 'get_data': "GetProcesses"}
+    \ 'ls':      {'title': 'Current Directory','keybind': 'l' ,'starting_line': 1 , 'search_query': '', 'selected_line': 1, 'get_data': "GetCurrDirFiles"},
+    \ 'recent':  {'title': 'Recent Files',     'keybind': 'r' ,'starting_line': 1 , 'search_query': '', 'selected_line': 1, 'get_data': "GetRecentFiles"},
+    \ 'marks':   {'title': 'Marks',            'keybind': 'm' ,'starting_line': 2 , 'search_query': '', 'selected_line': 1, 'get_data': "GetMarksList"},
+    \ 'process': {'title': 'Processes',        'keybind': 'p' ,'starting_line': 2 , 'search_query': '', 'selected_line': 1, 'get_data': "GetProcesses"}
     \ }
 
 " All these functions are global functions. to make local, do `function s:DebugMsg(msg)`
@@ -312,14 +312,22 @@ function! PopupFilter(winid, key)
       call s:OpenFileAction(a:winid, 'vsplit')
     elseif a:key == 'e'
       call s:OpenFileAction(a:winid, 'edit')
-    elseif a:key == 'r'
-      call ToggleViewMode('recent')
-    elseif a:key == 'l'
-      call ToggleViewMode('ls')
-    elseif a:key == 'm'
-      call ToggleViewMode('marks')
-    elseif a:key == 'p'
-      call ToggleViewMode('process')
+    " v:val is a special variable in Vim script that represents the current value being processed in certain functions, including map().
+    " When you use map() on a dictionary or list, v:val refers to each item as the function iterates through the collection.
+    elseif index(map(values(s:pages_data), 'v:val.keybind'), a:key) >= 0
+      let l:page_key = ''
+      for [key, value] in items(s:pages_data)
+          if value.keybind == a:key
+              let l:page_key = key
+              break
+          endif
+      endfor
+      if l:page_key != ''
+        call DebugMsg("Calling ToggleViewMode with key: " . l:page_key)
+        call ToggleViewMode(l:page_key)
+      else
+        call DebugMsg("No matching page found for keybind: " . a:key)
+      endif
     elseif a:key == 'q' || a:key == "\<Esc>"
       call popup_close(a:winid)
       call DebugMsg("Popup closed with winid: " . a:winid)
